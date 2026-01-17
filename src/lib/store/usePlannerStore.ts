@@ -17,12 +17,20 @@ interface PlannerState {
     dayData: Record<string, DayData>; // Map date (YYYY-MM-DD) -> DayData
     holidaySettings: HolidaySettings;
 
+    // UI Navigation State
+    isDrawerOpen: boolean;
+    selectedDate: string | null; // YYYY-MM-DD
+
     // Actions
     setYear: (year: number) => void;
     toggleWeekends: () => void;
     toggleBankHolidays: () => void;
     setSearchQuery: (query: string) => void;
     updateHolidaySettings: (settings: HolidaySettings) => void;
+
+    // Navigation Actions
+    openDrawer: (date: string) => void;
+    closeDrawer: () => void;
 
     // Data Operations
     loadData: () => Promise<void>;
@@ -47,6 +55,10 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
         rolloverExpiryDate: `${getYear(new Date())}-06-30`
     },
 
+    // UI Navigation Init
+    isDrawerOpen: false,
+    selectedDate: null,
+
     setYear: (year) => set({ currentYear: year }),
     toggleWeekends: () => set((state) => ({ showWeekends: !state.showWeekends })),
     toggleBankHolidays: () => set((state) => ({ showBankHolidays: !state.showBankHolidays })),
@@ -55,6 +67,9 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
         set({ holidaySettings: settings });
         await getRepository().saveSettings(settings);
     },
+
+    openDrawer: (date) => set({ isDrawerOpen: true, selectedDate: date }),
+    closeDrawer: () => set({ isDrawerOpen: false, selectedDate: null }),
 
     loadData: async () => {
         const data = await getRepository().getAllDayData();
@@ -177,15 +192,55 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
         const currentData = get().dayData[date];
         if (!currentData) return;
 
-        const newData = {
-            ...currentData,
-            plans: currentData.plans.filter(p => p.id !== planId)
-        };
+        const planToRemove = currentData.plans.find(p => p.id === planId);
+        if (!planToRemove) return;
+
+        const daysToUpdate: Record<string, DayData> = {};
+        const currentDayData = get().dayData;
+
+        // If it's a multi-day plan (has parentId), we need to find all related plans
+        if (planToRemove.parentId) {
+            // Iterate through all days to find instances of this plan hierarchy
+            // Note: In a production app with DB, this would be a simple query. 
+            // Here we iterate in memory. Optimization: Search only near the original date? 
+            // For now, full implementation for correctness:
+            Object.values(currentDayData).forEach(day => {
+                const multiDayInstance = day.plans.find(p => p.parentId === planToRemove.parentId);
+                if (multiDayInstance) {
+                    const newPlans = day.plans.filter(p => p.parentId !== planToRemove.parentId);
+                    daysToUpdate[day.date] = {
+                        ...day,
+                        // If we are removing the plan, and the day was isVacation, should we unset it?
+                        // Only if there are no other plans? Or if we explicitly toggle it off?
+                        // Requirement: "when i delete a plan the holidays taken for that plan aren't cleared out"
+                        // So we should unset isVacation if it was set. 
+                        // However, user might have manually set vacation too. 
+                        // For safety: if we delete a holiday plan, we unset isVacation.
+                        isVacation: false,
+                        plans: newPlans
+                    };
+                }
+            });
+        } else {
+            // Single plan removal
+            const newPlans = currentData.plans.filter(p => p.id !== planId);
+            daysToUpdate[date] = {
+                ...currentData,
+                // Assuming we want to clear vacation flag if the user deletes the plan that caused it
+                // Logic: If isVacation is true, and we remove a plan, force it to false?
+                // Or maybe just if it was a single day plan?
+                // Let's implement: clear isVacation for this day.
+                isVacation: false,
+                plans: newPlans
+            };
+        }
 
         set((state) => ({
-            dayData: { ...state.dayData, [date]: newData }
+            dayData: { ...state.dayData, ...daysToUpdate }
         }));
 
-        await getRepository().saveDayData(newData);
+        for (const day of Object.values(daysToUpdate)) {
+            await getRepository().saveDayData(day);
+        }
     }
 }));

@@ -23,7 +23,7 @@ import { Plan, PlanCategory, PlanSchema } from '@/types';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import { Trash2, Plus } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 // Schema for the form, omitting ID and createdAt as they are generated
 // Extended with endDate for multi-day plans
@@ -47,6 +47,9 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
         removePlan
     } = usePlannerStore();
 
+    // UI State
+    const [isAddPlanOpen, setIsAddPlanOpen] = useState(false);
+
     const formattedDate = date ? format(date, 'yyyy-MM-dd') : '';
     const currentDayData = date ? dayData[formattedDate] : null;
     const isVacation = currentDayData?.isVacation || false;
@@ -67,6 +70,7 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
     useEffect(() => {
         if (open) {
             reset();
+            setIsAddPlanOpen(false); // Collapsed by default
         }
     }, [open, date, reset]);
 
@@ -90,6 +94,7 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
         }
 
         reset();
+        setIsAddPlanOpen(false); // Close after successful add
     };
 
     const handleDelete = async (planId: string) => {
@@ -101,64 +106,110 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent className="w-[100%] sm:w-[440px] flex flex-col h-full overflow-hidden">
-                <SheetHeader>
-                    <SheetTitle>{format(date, 'EEEE, MMMM d, yyyy')}</SheetTitle>
-                    <SheetDescription>
+            {/* Increased width to 480px for better breathing room */}
+            <SheetContent className="w-[100%] sm:w-[500px] flex flex-col h-full overflow-hidden p-0 gap-0 border-l border-slate-200 dark:border-slate-800 shadow-2xl">
+                <SheetHeader className="px-6 py-5 border-b bg-muted/10">
+                    <SheetTitle className="text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
+                        {format(date, 'EEEE, MMMM d, yyyy')}
+                    </SheetTitle>
+                    <SheetDescription className="text-base">
                         Manage plans and status for this day.
                     </SheetDescription>
                 </SheetHeader>
 
-                <div className="flex-1 overflow-y-auto py-4 space-y-6">
-                    {/* Vacation Toggle */}
-                    <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/20">
-                        <div className="space-y-0.5">
-                            <Label className="text-base">Taken Holiday</Label>
-                            <div className="text-sm text-muted-foreground">
-                                Mark this day as a vacation.
+                <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
+
+                    {/* Vacation Section */}
+                    <div className="flex items-center justify-between p-4 border rounded-xl bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-800/50 shadow-sm transition-all hover:shadow-md">
+                        <div className="space-y-1">
+                            <Label className="text-base font-semibold">Taken Holiday</Label>
+                            <div className="text-sm text-muted-foreground mr-4">
+                                Mark this day as annual leave.
                             </div>
                         </div>
                         <Switch
                             checked={isVacation}
                             onCheckedChange={() => toggleVacation(formattedDate)}
+                            className="data-[state=checked]:bg-teal-500"
                         />
                     </div>
 
-                    <Separator />
+                    <Separator className="bg-slate-100 dark:bg-slate-800" />
 
-                    {/* Existing Plans */}
-                    <div className="space-y-4">
-                        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">Plans</h3>
+                    {/* Plans Section */}
+                    <div className="space-y-5">
+                        <div className="flex items-center justify-between">
+                            <h3 className="font-semibold text-sm text-slate-500 uppercase tracking-widest">
+                                Plans ({plans.length})
+                            </h3>
+
+                            {!isAddPlanOpen && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setIsAddPlanOpen(true)}
+                                    className="gap-2 h-8 text-xs font-medium"
+                                >
+                                    <Plus className="h-3.5 w-3.5" /> Add Plan
+                                </Button>
+                            )}
+                        </div>
+
                         {plans.length === 0 ? (
-                            <div className="text-center py-6 text-muted-foreground text-sm italic border-2 border-dashed rounded-lg">
-                                No plans yet.
+                            <div className="flex flex-col items-center justify-center py-10 px-4 text-center border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl bg-slate-50/50 dark:bg-slate-900/50">
+                                <div className="p-3 bg-white dark:bg-slate-800 rounded-full shadow-sm mb-3">
+                                    <Plus className="h-5 w-5 text-slate-400" />
+                                </div>
+                                <p className="text-muted-foreground text-sm font-medium">No plans managed for this day yet.</p>
+                                {!isAddPlanOpen && (
+                                    <Button
+                                        variant="link"
+                                        size="sm"
+                                        onClick={() => setIsAddPlanOpen(true)}
+                                        className="mt-1 text-primary"
+                                    >
+                                        Create one now
+                                    </Button>
+                                )}
                             </div>
                         ) : (
                             <div className="space-y-3">
                                 {plans.map((plan) => (
-                                    <div key={plan.id} className="group relative p-3 border rounded-lg hover:bg-muted/50 transition-colors">
-                                        <div className="flex justify-between items-start">
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="font-semibold">{plan.title}</span>
-                                                    <Badge variant="secondary" className="text-[10px] h-5 px-1.5 font-normal">
+                                    <div
+                                        key={plan.id}
+                                        className="group relative p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 hover:border-primary/20 hover:shadow-sm transition-all duration-200"
+                                    >
+                                        <div className="flex justify-between items-start gap-4">
+                                            <div className="flex-1 min-w-0 space-y-2">
+                                                <div className="flex items-center flex-wrap gap-2">
+                                                    <span className="font-semibold text-base text-slate-800 dark:text-slate-200">
+                                                        {plan.title}
+                                                    </span>
+                                                    <Badge
+                                                        variant="secondary"
+                                                        className="text-[10px] h-5 px-2 font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                                    >
                                                         {plan.tag}
                                                     </Badge>
                                                     {plan.time && (
-                                                        <span className="text-xs text-muted-foreground font-mono bg-muted px-1 rounded">{plan.time}</span>
+                                                        <span className="text-xs font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-600 dark:text-slate-400">
+                                                            {plan.time}
+                                                        </span>
                                                     )}
                                                 </div>
                                                 {plan.notes && (
-                                                    <p className="text-sm text-muted-foreground line-clamp-2">{plan.notes}</p>
+                                                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                                                        {plan.notes}
+                                                    </p>
                                                 )}
                                             </div>
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity -mr-2"
+                                                className="h-8 w-8 text-slate-400 hover:text-destructive hover:bg-destructive/10 -mt-1 -mr-2 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
                                                 onClick={() => handleDelete(plan.id)}
                                             >
-                                                <Trash2 className="h-4 w-4 text-destructive" />
+                                                <Trash2 className="h-4 w-4" />
                                             </Button>
                                         </div>
                                     </div>
@@ -167,61 +218,97 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
                         )}
                     </div>
 
-                    <Separator />
-
-                    {/* Add Plan Form */}
-                    <div className="space-y-4">
-                        <h3 className="font-medium text-sm text-muted-foreground uppercase tracking-wider">Add New Plan</h3>
-                        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3 p-1">
-                            <div className="grid gap-2">
-                                <Label htmlFor="title">Title</Label>
-                                <Input id="title" placeholder="e.g. Flight to Paris" {...register('title')} />
-                                {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
+                    {/* Add Plan Form - Collapsible */}
+                    {isAddPlanOpen && (
+                        <div className="border border-indigo-100 dark:border-indigo-900/50 rounded-xl bg-indigo-50/30 dark:bg-indigo-900/10 p-5 space-y-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
+                            <div className="flex items-center justify-between">
+                                <h3 className="font-semibold text-sm text-indigo-900 dark:text-indigo-200">
+                                    New Plan Details
+                                </h3>
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 hover:bg-transparent text-slate-400 hover:text-slate-600"
+                                    onClick={() => setIsAddPlanOpen(false)}
+                                >
+                                    <span className="sr-only">Close</span>
+                                    <span aria-hidden="true" className="text-lg">×</span>
+                                </Button>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
                                 <div className="grid gap-2">
-                                    <Label htmlFor="time">Time (Optional)</Label>
-                                    <Input id="time" type="time" {...register('time')} />
-                                </div>
-                                <div className="grid gap-2">
-                                    <Label htmlFor="endDate" className="text-muted-foreground">End Date (Optional)</Label>
+                                    <Label htmlFor="title" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Title</Label>
                                     <Input
-                                        id="endDate"
-                                        type="date"
-                                        min={formattedDate}
-                                        {...register('endDate')}
+                                        id="title"
+                                        placeholder="e.g. Flight to Paris"
+                                        className="bg-white dark:bg-slate-900"
+                                        {...register('title')}
+                                    />
+                                    {errors.title && <p className="text-xs text-destructive">{errors.title.message}</p>}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="time" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Time</Label>
+                                        <Input
+                                            id="time"
+                                            type="time"
+                                            className="bg-white dark:bg-slate-900"
+                                            {...register('time')}
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
+                                        <Label htmlFor="endDate" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ends On</Label>
+                                        <Input
+                                            id="endDate"
+                                            type="date"
+                                            min={formattedDate}
+                                            className="bg-white dark:bg-slate-900"
+                                            {...register('endDate')}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <Label htmlFor="tag" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Category</Label>
+                                    <Select onValueChange={(val) => setValue('tag', val as PlanCategory)} defaultValue="Personal">
+                                        <SelectTrigger className="bg-white dark:bg-slate-900">
+                                            <SelectValue placeholder="Category" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Work">Work</SelectItem>
+                                            <SelectItem value="Personal">Personal</SelectItem>
+                                            <SelectItem value="Travel">Travel</SelectItem>
+                                            <SelectItem value="Health">Health</SelectItem>
+                                            <SelectItem value="Family">Family</SelectItem>
+                                            <SelectItem value="Other">Other</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+
+                                <div className="grid gap-2">
+                                    <Label htmlFor="notes" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</Label>
+                                    <Textarea
+                                        id="notes"
+                                        placeholder="Additional details..."
+                                        className="resize-none bg-white dark:bg-slate-900"
+                                        rows={3}
+                                        {...register('notes')}
                                     />
                                 </div>
-                            </div>
 
-                            <div className="grid gap-2">
-                                <Label htmlFor="tag">Category</Label>
-                                <Select onValueChange={(val) => setValue('tag', val as PlanCategory)} defaultValue="Personal">
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Category" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="Work">Work</SelectItem>
-                                        <SelectItem value="Personal">Personal</SelectItem>
-                                        <SelectItem value="Travel">Travel</SelectItem>
-                                        <SelectItem value="Health">Health</SelectItem>
-                                        <SelectItem value="Family">Family</SelectItem>
-                                        <SelectItem value="Other">Other</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-
-                            <div className="grid gap-2">
-                                <Label htmlFor="notes">Notes (Optional)</Label>
-                                <Textarea id="notes" placeholder="Additional details..." {...register('notes')} />
-                            </div>
-
-                            <Button type="submit" className="w-full mt-2" size="sm">
-                                <Plus className="mr-2 h-4 w-4" /> Add Plan
-                            </Button>
-                        </form>
-                    </div>
+                                <div className="pt-2 flex gap-3">
+                                    <Button type="button" variant="outline" className="flex-1" onClick={() => setIsAddPlanOpen(false)}>
+                                        Cancel
+                                    </Button>
+                                    <Button type="submit" className="flex-1">
+                                        Save Plan
+                                    </Button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
                 </div>
             </SheetContent>
         </Sheet>

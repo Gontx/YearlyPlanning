@@ -14,8 +14,9 @@ import {
 import { UpcomingPanel } from './UpcomingPanel';
 import { HolidaySettingsDialog } from './HolidaySettingsDialog';
 import { UserMenu } from '@/components/auth/UserMenu';
+import { Badge } from '@/components/ui/badge';
 import { useState } from 'react';
-import { format } from 'date-fns';
+import { format, startOfDay, addDays } from 'date-fns';
 
 export function Header() {
     const {
@@ -39,6 +40,23 @@ export function Header() {
     const totalAllowance = holidaySettings.baseAllowance + holidaySettings.rolloverDays;
     const hasRollover = holidaySettings.rolloverDays > 0;
     const isOverBudget = vacationDays > totalAllowance;
+
+    // Calculate upcoming events for badge (next 7 days)
+    const today = startOfDay(new Date());
+    const next7Days = Array.from({ length: 7 }, (_, i) => addDays(today, i));
+    const upcomingCount = next7Days.reduce((count, date) => {
+        const dateStr = format(date, 'yyyy-MM-dd');
+        const day = dayData[dateStr];
+        const holiday = usePlannerStore.getState().holidays.find(h => h.date === dateStr);
+
+        // Use current store state for bank holidays toggle check
+        let events = 0;
+        if (day?.plans) events += day.plans.length;
+        if (day?.isVacation) events += 1;
+        if (showBankHolidays && holiday) events += 1;
+
+        return count + events;
+    }, 0);
 
     return (
         <header className="sticky top-0 z-50 w-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/60 dark:border-slate-700/60">
@@ -82,15 +100,22 @@ export function Header() {
                     </button>
 
                     {/* Upcoming Panel Button */}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-9 w-9 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
-                        onClick={() => setIsUpcomingOpen(true)}
-                        title="Upcoming Events"
-                    >
-                        <CalendarDays className="h-4 w-4" />
-                    </Button>
+                    <div className="relative">
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-9 w-9 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800"
+                            onClick={() => setIsUpcomingOpen(true)}
+                            title="Upcoming Events"
+                        >
+                            <CalendarDays className="h-4 w-4" />
+                        </Button>
+                        {upcomingCount > 0 && (
+                            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm ring-2 ring-white dark:ring-slate-900">
+                                {upcomingCount > 9 ? '9+' : upcomingCount}
+                            </span>
+                        )}
+                    </div>
 
                     {/* Year Selector */}
                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">

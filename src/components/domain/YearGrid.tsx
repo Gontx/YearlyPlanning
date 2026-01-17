@@ -4,21 +4,29 @@ import { usePlannerStore } from "@/lib/store/usePlannerStore";
 import { MonthCard } from "./MonthCard";
 import { useEffect } from "react";
 import { DayDetailsDrawer } from "./DayDetailsDrawer"; // We will create this next
-import { useState } from "react";
+
 
 export function YearGrid() {
     const currentYear = usePlannerStore(state => state.currentYear);
     const loadData = usePlannerStore(state => state.loadData);
-    const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+    // UI State from store
+    const selectedDateStr = usePlannerStore(state => state.selectedDate);
+    const isDrawerOpen = usePlannerStore(state => state.isDrawerOpen);
+    const openDrawer = usePlannerStore(state => state.openDrawer);
+    const closeDrawer = usePlannerStore(state => state.closeDrawer);
+
+    // Convert string date back to Date object for the drawer prop
+    const selectedDate = selectedDateStr ? new Date(selectedDateStr) : null;
 
     useEffect(() => {
         loadData();
     }, [loadData]);
 
     const handleDayClick = (date: Date) => {
-        setSelectedDate(date);
-        setIsDrawerOpen(true);
+        // Format as YYYY-MM-DD for store
+        const dateStr = date.toISOString().split('T')[0];
+        openDrawer(dateStr);
     };
 
     return (
@@ -36,7 +44,7 @@ export function YearGrid() {
 
             <DayDetailsDrawer
                 open={isDrawerOpen}
-                onOpenChange={setIsDrawerOpen}
+                onOpenChange={(open) => !open && closeDrawer()}
                 date={selectedDate}
             />
         </div>
