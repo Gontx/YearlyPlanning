@@ -4,6 +4,7 @@ import { usePlannerStore } from "@/lib/store/usePlannerStore";
 import { MonthCard } from "./MonthCard";
 import { useEffect } from "react";
 import { DayDetailsDrawer } from "./DayDetailsDrawer"; // We will create this next
+import { format } from "date-fns";
 
 
 export function YearGrid() {
@@ -24,8 +25,8 @@ export function YearGrid() {
     }, [loadData]);
 
     const handleDayClick = (date: Date) => {
-        // Format as YYYY-MM-DD for store
-        const dateStr = date.toISOString().split('T')[0];
+        // Format as YYYY-MM-DD for store (use local time via date-fns format)
+        const dateStr = format(date, 'yyyy-MM-dd');
         openDrawer(dateStr);
     };
 
