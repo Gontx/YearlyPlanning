@@ -26,7 +26,10 @@ import { Trash2, Plus } from 'lucide-react';
 import { useEffect } from 'react';
 
 // Schema for the form, omitting ID and createdAt as they are generated
-const PlanFormSchema = PlanSchema.omit({ id: true, createdAt: true, parentId: true });
+// Extended with endDate for multi-day plans
+const PlanFormSchema = PlanSchema.omit({ id: true, createdAt: true, parentId: true }).extend({
+    endDate: z.string().optional()
+});
 type PlanFormValues = z.infer<typeof PlanFormSchema>;
 
 interface DayDetailsDrawerProps {
@@ -49,7 +52,7 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
     const isVacation = currentDayData?.isVacation || false;
     const plans = currentDayData?.plans || [];
 
-    const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<PlanFormValues & { endDate?: string }>({
+    const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<PlanFormValues>({
         resolver: zodResolver(PlanFormSchema),
         defaultValues: {
             title: '',
@@ -67,7 +70,7 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
         }
     }, [open, date, reset]);
 
-    const onSubmit = async (data: PlanFormValues & { endDate?: string }) => {
+    const onSubmit = async (data: PlanFormValues) => {
         if (!formattedDate) return;
 
         const newPlan: Plan = {
@@ -80,7 +83,8 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
         };
 
         if (data.endDate && data.endDate > formattedDate) {
-            await addMultiDayPlan(formattedDate, data.endDate, newPlan);
+            // Pass the current isVacation state to mark all workdays as vacation
+            await addMultiDayPlan(formattedDate, data.endDate, newPlan, isVacation);
         } else {
             await addPlan(formattedDate, newPlan);
         }

@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { DayData, Holiday, Plan, HolidaySettings } from '@/types';
 import { getRepository } from '@/components/Providers';
 import { SPANISH_HOLIDAYS } from '@/data/holidays';
-import { getYear } from 'date-fns';
+import { getYear, isWeekend } from 'date-fns';
 
 interface PlannerState {
     // UI State
@@ -28,7 +28,7 @@ interface PlannerState {
     loadData: () => Promise<void>;
     toggleVacation: (date: string) => Promise<void>;
     addPlan: (date: string, plan: Plan) => Promise<void>;
-    addMultiDayPlan: (startDate: string, endDate: string, plan: Plan) => Promise<void>;
+    addMultiDayPlan: (startDate: string, endDate: string, plan: Plan, markAsVacation?: boolean) => Promise<void>;
     updatePlan: (date: string, plan: Plan) => Promise<void>;
     removePlan: (date: string, planId: string) => Promise<void>;
 }
@@ -92,23 +92,38 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
         await getRepository().saveDayData(newData);
     },
 
-    addMultiDayPlan: async (startDateStr, endDateStr, basePlan) => {
-        const start = new Date(startDateStr);
-        const end = new Date(endDateStr);
+    addMultiDayPlan: async (startDateStr, endDateStr, basePlan, markAsVacation = false) => {
+        // Parse dates as local dates (avoid timezone issues with new Date(string))
+        const [startYear, startMonth, startDay] = startDateStr.split('-').map(Number);
+        const [endYear, endMonth, endDay] = endDateStr.split('-').map(Number);
+        const start = new Date(startYear, startMonth - 1, startDay);
+        const end = new Date(endYear, endMonth - 1, endDay);
+
         // Prevent infinite loop if dates are wrong
         if (start > end) return;
 
         const daysToUpdate: Record<string, DayData> = {};
         const currentDayData = get().dayData;
+        const holidays = get().holidays;
+
+        // Create a set of bank holiday dates for quick lookup
+        const bankHolidayDates = new Set(holidays.map(h => h.date));
 
         // Generate a shared parent ID if none exists
         const parentId = basePlan.parentId || basePlan.id;
 
         // Iterate from start to end
-        let current = start;
+        let current = new Date(start);
         while (current <= end) {
-            const dateStr = current.toISOString().split('T')[0];
+            // Format date as YYYY-MM-DD in local timezone
+            const year = current.getFullYear();
+            const month = String(current.getMonth() + 1).padStart(2, '0');
+            const day = String(current.getDate()).padStart(2, '0');
+            const dateStr = `${year}-${month}-${day}`;
+
             const existing = currentDayData[dateStr] || { date: dateStr, isVacation: false, plans: [] };
+            const isBankHoliday = bankHolidayDates.has(dateStr);
+            const isWeekendDay = isWeekend(current);
 
             // Create a plan copy for this day
             // We give it a unique ID for the day, but link it via parentId
@@ -118,8 +133,13 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
                 parentId: parentId
             };
 
+            // Determine if we should mark this day as vacation
+            // Only mark as vacation if: markAsVacation is true AND it's not a weekend AND it's not a bank holiday
+            const shouldMarkVacation = markAsVacation && !isWeekendDay && !isBankHoliday;
+
             daysToUpdate[dateStr] = {
                 ...existing,
+                isVacation: shouldMarkVacation ? true : existing.isVacation,
                 plans: [...existing.plans, dailyPlan]
             };
 
