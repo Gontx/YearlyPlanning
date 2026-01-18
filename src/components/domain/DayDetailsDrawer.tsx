@@ -1,6 +1,7 @@
 'use client';
 
-import { usePlannerStore } from '@/lib/store/usePlannerStore';
+import { useDataStore } from '@/lib/store/useDataStore';
+import { useUIStore } from '@/lib/store/useUIStore';
 import { Button } from '@/components/ui/button';
 import {
     Sheet,
@@ -34,20 +35,42 @@ const PlanFormSchema = PlanSchema.omit({ id: true, createdAt: true, parentId: tr
 type PlanFormValues = z.infer<typeof PlanFormSchema>;
 
 interface DayDetailsDrawerProps {
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    date: Date | null;
+    // Props are no longer needed for open/close as it is in store, 
+    // but we might still accept them if strictly controlled. 
+    // Ideally we remove them and use store state, but for minimal refactor let's see usage.
+    // The current signature is: { open, onOpenChange, date }
+    // These match what the parent does.
+    // However, the previous code IGNORED the props in favor of store state inside the drawer??
+    // Wait, the previous code took `open` prop but ALSO used store actions inside?
+    // Actually no, previous code took props but called store actions for data.
+    // AND `Header` or `YearGrid` called `openDrawer` in store.
+    // So there is a mix.
+    // Let's defer to what the component expects.
+    // If this component is controlled by parent, we keep props.
+    // If it's controlled by store (global drawer), we should use store.
+    // Given `usePlannerStore` had `isDrawerOpen`, it seems it was intended to be global.
+    // But `DayDetailsDrawer` receives `open` prop.
+    // Let's assume for now we switch to store control completely or keep pure.
+    // Looking at usage in YearGrid might clarify.
 }
 
-export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerProps) {
-    const {
-        dayData,
-        addPlan,
-        addMultiDayPlan,
-        removePlan,
-        getPlanRange,
-        editPlan
-    } = usePlannerStore();
+export function DayDetailsDrawer() {
+    const isDrawerOpen = useUIStore(state => state.isDrawerOpen);
+    const selectedDate = useUIStore(state => state.selectedDate);
+    const closeDrawer = useUIStore(state => state.closeDrawer);
+
+    const dayData = useDataStore(state => state.dayData);
+    const addPlan = useDataStore(state => state.addPlan);
+    const addMultiDayPlan = useDataStore(state => state.addMultiDayPlan);
+    const removePlan = useDataStore(state => state.removePlan);
+    const getPlanRange = useDataStore(state => state.getPlanRange);
+    const editPlan = useDataStore(state => state.editPlan);
+
+    // Mapping store state to local convenient variables
+    const open = isDrawerOpen;
+    const dateStr = selectedDate;
+    const date = dateStr ? new Date(dateStr) : null;
+    const onOpenChange = (isOpen: boolean) => !isOpen && closeDrawer();
 
     // UI State
     const [isAddPlanOpen, setIsAddPlanOpen] = useState(false);
@@ -77,7 +100,8 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
             setIsAddPlanOpen(false); // Collapsed by default
             setEditingPlan(null);
         }
-    }, [open, date, reset]);
+        // Depend on stable string `selectedDate` instead of new Date object `date`
+    }, [open, selectedDate, reset]);
 
     const handleEdit = (plan: Plan) => {
         const range = getPlanRange(plan);
@@ -114,10 +138,10 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
         // Our updated store uses `newPlanData.requiresHoliday`.
 
         if (editingPlan) {
-            await editPlan(editingPlan, start, end, newPlanData, !!data.requiresHoliday);
+            await editPlan(editingPlan, start, end, newPlanData);
         } else {
             if (end > start) {
-                await addMultiDayPlan(start, end, newPlanData, !!data.requiresHoliday);
+                await addMultiDayPlan(start, end, newPlanData);
             } else {
                 if (start !== formattedDate) {
                     await addPlan(start, newPlanData);

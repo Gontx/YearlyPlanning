@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/components/auth/AuthContext";
-import { usePlannerStore } from "@/lib/store/usePlannerStore";
+import { useDataStore } from "@/lib/store/useDataStore";
 import {
     LocalStorageRepository,
     IYearPlannerRepository,
@@ -20,7 +20,7 @@ export function useRepositorySync() {
     const { user, loading } = useAuth();
     const hasLoadedRef = useRef(false);
     const previousUserIdRef = useRef<string | null>(null);
-    const loadData = usePlannerStore((state) => state.loadData);
+    const loadData = useDataStore((state) => state.loadData);
 
     const switchRepository = useCallback(
         async (userId: string | null) => {

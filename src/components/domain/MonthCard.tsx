@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { eachDayOfInterval, endOfMonth, format, startOfWeek, endOfWeek } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { DayCell } from './DayCell';
-import { usePlannerStore } from '@/lib/store/usePlannerStore';
+import { useDataStore } from '@/lib/store/useDataStore';
 import { motion } from 'framer-motion';
 
 interface MonthCardProps {
@@ -28,8 +28,8 @@ const monthAccents: Record<number, { text: string; accent: string; border: strin
 };
 
 export function MonthCard({ year, monthIndex, onDayClick }: MonthCardProps) {
-    const dayData = usePlannerStore(state => state.dayData);
-    const holidays = usePlannerStore(state => state.holidays);
+    const dayData = useDataStore(state => state.dayData);
+    const holidays = useDataStore(state => state.holidays);
 
     const monthStart = new Date(year, monthIndex, 1);
     const monthEnd = endOfMonth(monthStart);

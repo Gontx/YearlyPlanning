@@ -2,7 +2,7 @@
 
 import { ReactNode, useEffect, useState } from "react";
 import { AuthProvider, useAuth } from "@/components/auth/AuthContext";
-import { usePlannerStore } from "@/lib/store/usePlannerStore";
+import { useDataStore } from "@/lib/store/useDataStore";
 import { LocalStorageRepository, IYearPlannerRepository } from "@/lib/repository/LocalStorageRepository";
 import { FirestoreRepository } from "@/lib/repository/FirestoreRepository";
 
@@ -15,7 +15,7 @@ export function getRepository(): IYearPlannerRepository {
 
 function RepositorySync({ children }: { children: ReactNode }) {
     const { user, loading: authLoading } = useAuth();
-    const loadData = usePlannerStore((state) => state.loadData);
+    const loadData = useDataStore((state) => state.loadData);
     const [isReady, setIsReady] = useState(false);
 
     useEffect(() => {
@@ -46,10 +46,15 @@ function RepositorySync({ children }: { children: ReactNode }) {
     return <>{children}</>;
 }
 
+import { Toaster } from "@/components/ui/sonner";
+
 export function Providers({ children }: { children: ReactNode }) {
     return (
         <AuthProvider>
-            <RepositorySync>{children}</RepositorySync>
+            <RepositorySync>
+                {children}
+                <Toaster />
+            </RepositorySync>
         </AuthProvider>
     );
 }

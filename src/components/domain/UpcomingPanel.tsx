@@ -1,6 +1,7 @@
 'use client';
 
-import { usePlannerStore } from '@/lib/store/usePlannerStore';
+import { useDataStore } from '@/lib/store/useDataStore';
+import { useUIStore } from '@/lib/store/useUIStore';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { addDays, format, isSameDay, startOfDay } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
@@ -14,7 +15,8 @@ interface UpcomingPanelProps {
 }
 
 export function UpcomingPanel({ open, onOpenChange }: UpcomingPanelProps) {
-    const { dayData, holidays, showBankHolidays, openDrawer } = usePlannerStore();
+    const { dayData, holidays } = useDataStore();
+    const { showBankHolidays, openDrawer } = useUIStore();
 
     // Look ahead 90 days for better planning view
     const today = startOfDay(new Date());

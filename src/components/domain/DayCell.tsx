@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils"
 import { DayData, Holiday } from "@/types"
 import { motion } from "framer-motion"
 import { format, isToday, isWeekend } from "date-fns"
-import { usePlannerStore } from "@/lib/store/usePlannerStore"
+import { useUIStore } from "@/lib/store/useUIStore"
 import {
     Tooltip,
     TooltipContent,
@@ -19,9 +19,9 @@ interface DayCellProps {
 }
 
 export function DayCell({ date, dayData, holiday, inCurrentMonth, onClick }: DayCellProps) {
-    const showWeekends = usePlannerStore(state => state.showWeekends);
-    const showBankHolidays = usePlannerStore(state => state.showBankHolidays);
-    const searchQuery = usePlannerStore(state => state.searchQuery);
+    const showWeekends = useUIStore(state => state.showWeekends);
+    const showBankHolidays = useUIStore(state => state.showBankHolidays);
+    const searchQuery = useUIStore(state => state.searchQuery);
 
     const isWknd = isWeekend(date)
     const isTdy = isToday(date)

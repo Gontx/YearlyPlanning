@@ -1,6 +1,7 @@
 'use client';
 
-import { usePlannerStore } from '@/lib/store/usePlannerStore';
+import { useUIStore } from '@/lib/store/useUIStore';
+import { useDataStore } from '@/lib/store/useDataStore';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -28,15 +29,15 @@ export function Header() {
         toggleBankHolidays,
         searchQuery,
         setSearchQuery
-    } = usePlannerStore();
+    } = useUIStore();
 
     const [isUpcomingOpen, setIsUpcomingOpen] = useState(false);
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
-    const dayData = usePlannerStore(state => state.dayData);
-    const holidaySettings = usePlannerStore(state => state.holidaySettings);
+    const dayData = useDataStore(state => state.dayData);
+    const holidaySettings = useDataStore(state => state.holidaySettings);
 
-    const holidays = usePlannerStore(state => state.holidays);
+    const holidays = useDataStore(state => state.holidays);
     const bankHolidayDates = new Set(holidays.map(h => h.date));
 
     // Only count working days (not weekends, not bank holidays) as used allowance
@@ -56,7 +57,7 @@ export function Header() {
     const upcomingCount = next7Days.reduce((count, date) => {
         const dateStr = format(date, 'yyyy-MM-dd');
         const day = dayData[dateStr];
-        const holiday = usePlannerStore.getState().holidays.find(h => h.date === dateStr);
+        const holiday = useDataStore.getState().holidays.find(h => h.date === dateStr);
 
         // Use current store state for bank holidays toggle check
         let events = 0;

@@ -11,7 +11,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { usePlannerStore } from '@/lib/store/usePlannerStore';
+import { useDataStore } from '@/lib/store/useDataStore';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -31,7 +31,7 @@ interface HolidaySettingsDialogProps {
 }
 
 export function HolidaySettingsDialog({ open, onOpenChange }: HolidaySettingsDialogProps) {
-    const { holidaySettings, updateHolidaySettings } = usePlannerStore();
+    const { holidaySettings, updateHolidaySettings } = useDataStore();
 
     // We explicitly cast the default values because the form needs to know these are valid
     // even though the Zod schema is strict about numbers.

@@ -1,36 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# YearlyPlanning
 
-## Getting Started
+A modern, full-stack yearly planning application built to help users manage their time, track holidays, and organize upcoming plans with a beautiful, grid-based yearly interface.
 
-First, run the development server:
+## 🚀 Key Features
+
+*   **Yearly Overview**: An intuitive grid view (`YearGrid`) of the entire year to visualize density and holidays at a glance.
+*   **Holiday Management**: Configure annual leave allowance, track "Bank Holidays", and manage rollover days.
+*   **Plan Management**: Add, edit, and organize plans (Work, Personal, Travel, etc.) for specific days or spanning multiple days.
+*   **Smart Vacation Tracking**: Automatically calculates holiday allowance usage based on working days (excluding weekends and bank holidays).
+*   **Cloud Sync**: Seamless data synchronization across devices using **Firebase Firestore**.
+*   **Responsive Design**: optimized for both desktop and mobile web experiences.
+
+## 🛠️ Tech Stack
+
+*   **Framework**: [Next.js 15 (App Router)](https://nextjs.org/)
+*   **Language**: TypeScript
+*   **Styling**: [Tailwind CSS](https://tailwindcss.com/)
+*   **Components**: [Shadcn/UI](https://ui.shadcn.com/) (Radix UI + Tailwind)
+*   **State Management**: [Zustand](https://github.com/pmndrs/zustand)
+*   **Validation**: [Zod](https://zod.dev/)
+*   **Animations**: [Framer Motion](https://www.framer.com/motion/)
+*   **Database**: Firebase Firestore
+
+## 📂 Project Structure
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+src/
+├── app/             # Next.js App Router pages and layouts
+├── components/
+│   ├── domain/      # Business-specific components (YearGrid, MonthCard, etc.)
+│   └── ui/          # Reusable UI components (buttons, dialogs, inputs)
+├── lib/
+│   ├── firebase/    # Firebase configuration
+│   ├── repository/  # Data access layer (FirestoreRepository)
+│   └── store/       # Global state management (usePlannerStore)
+└── types/           # Shared TypeScript definitions (Plan, Holiday, etc.)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## ⚡ Getting Started
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Prerequisites
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+*   Node.js (v18 or higher recommended)
+*   npm, yarn, or bun
 
-## Learn More
+### Installation
 
-To learn more about Next.js, take a look at the following resources:
+1.  **Clone the repository**:
+    ```bash
+    git clone https://github.com/your-username/yearly-planning.git
+    cd yearly-planning
+    ```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+2.  **Install dependencies**:
+    ```bash
+    npm install
+    ```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+3.  **Environment Setup**:
+    Create a `.env.local` file in the root directory and add your Firebase configuration keys:
+    ```env
+    NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
+    NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project_id.firebaseapp.com
+    NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
+    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project_id.appspot.com
+    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+    NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+    ```
 
-## Deploy on Vercel
+4.  **Run the development server**:
+    ```bash
+    npm run dev
+    ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+5.  Open [http://localhost:3000](http://localhost:3000) with your browser.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## 📐 Architecture Overview
+
+This project follows a **Feature-First** and **Repository Pattern** architecture:
+*   **Domain Logic** is kept close to `components/domain`.
+*   **Data Access** is abstracted via the `IYearPlannerRepository` interface, allowing the application to switch between `LocalStorage` (for offline/demo) and `Firestore` (for production) easily.
+*   **State** is centrally managed via `usePlannerStore`, which coordinates UI updates and persists data to the repository.
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1.  Fork the project
+2.  Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3.  Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4.  Push to the branch (`git push origin feature/AmazingFeature`)
+5.  Open a Pull Request
