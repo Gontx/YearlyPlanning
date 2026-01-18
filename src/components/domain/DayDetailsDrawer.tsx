@@ -22,12 +22,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Plan, PlanCategory, PlanSchema } from '@/types';
 import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
-import { Trash2, Plus } from 'lucide-react';
+import { Trash2, Plus, Pencil } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 // Schema for the form, omitting ID and createdAt as they are generated
 // Extended with endDate for multi-day plans
 const PlanFormSchema = PlanSchema.omit({ id: true, createdAt: true, parentId: true }).extend({
+    startDate: z.string().optional(),
     endDate: z.string().optional()
 });
 type PlanFormValues = z.infer<typeof PlanFormSchema>;
@@ -41,28 +42,31 @@ interface DayDetailsDrawerProps {
 export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerProps) {
     const {
         dayData,
-        toggleVacation,
         addPlan,
         addMultiDayPlan,
-        removePlan
+        removePlan,
+        getPlanRange,
+        editPlan
     } = usePlannerStore();
 
     // UI State
     const [isAddPlanOpen, setIsAddPlanOpen] = useState(false);
+    const [editingPlan, setEditingPlan] = useState<Plan | null>(null);
 
     const formattedDate = date ? format(date, 'yyyy-MM-dd') : '';
     const currentDayData = date ? dayData[formattedDate] : null;
-    const isVacation = currentDayData?.isVacation || false;
     const plans = currentDayData?.plans || [];
 
-    const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<PlanFormValues>({
+    const { register, handleSubmit, reset, setValue, watch, formState: { errors } } = useForm<PlanFormValues>({
         resolver: zodResolver(PlanFormSchema),
         defaultValues: {
             title: '',
             time: '',
             tag: 'Personal',
             notes: '',
-            endDate: '' // optional
+            startDate: '',
+            endDate: '',
+            requiresHoliday: false
         }
     });
 
@@ -71,30 +75,61 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
         if (open) {
             reset();
             setIsAddPlanOpen(false); // Collapsed by default
+            setEditingPlan(null);
         }
     }, [open, date, reset]);
+
+    const handleEdit = (plan: Plan) => {
+        const range = getPlanRange(plan);
+        setEditingPlan(plan);
+        setValue('title', plan.title);
+        setValue('time', plan.time || '');
+        setValue('tag', plan.tag);
+        setValue('notes', plan.notes || '');
+        setValue('startDate', range.startDate || formattedDate);
+        setValue('endDate', range.endDate || formattedDate);
+        setValue('requiresHoliday', plan.requiresHoliday || false);
+
+        setIsAddPlanOpen(true);
+    };
 
     const onSubmit = async (data: PlanFormValues) => {
         if (!formattedDate) return;
 
-        const newPlan: Plan = {
-            id: uuidv4(),
-            createdAt: Date.now(),
+        const start = data.startDate || formattedDate;
+        const end = data.endDate || start;
+
+        const newPlanData: Plan = {
+            id: editingPlan?.id || uuidv4(),
+            createdAt: editingPlan?.createdAt || Date.now(),
             title: data.title,
             time: data.time,
             tag: data.tag,
-            notes: data.notes
+            notes: data.notes,
+            requiresHoliday: data.requiresHoliday
         };
 
-        if (data.endDate && data.endDate > formattedDate) {
-            // Pass the current isVacation state to mark all workdays as vacation
-            await addMultiDayPlan(formattedDate, data.endDate, newPlan, isVacation);
+        // Note: The isVacation arg is now legacy/unused in most stores if logic is derived, 
+        // but we pass `data.requiresHoliday` to be explicit for legacy method signatures if needed.
+        // Our updated store uses `newPlanData.requiresHoliday`.
+
+        if (editingPlan) {
+            await editPlan(editingPlan, start, end, newPlanData, !!data.requiresHoliday);
         } else {
-            await addPlan(formattedDate, newPlan);
+            if (end > start) {
+                await addMultiDayPlan(start, end, newPlanData, !!data.requiresHoliday);
+            } else {
+                if (start !== formattedDate) {
+                    await addPlan(start, newPlanData);
+                } else {
+                    await addPlan(formattedDate, newPlanData);
+                }
+            }
         }
 
         reset();
         setIsAddPlanOpen(false); // Close after successful add
+        setEditingPlan(null);
     };
 
     const handleDelete = async (planId: string) => {
@@ -113,28 +148,11 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
                         {format(date, 'EEEE, MMMM d, yyyy')}
                     </SheetTitle>
                     <SheetDescription className="text-base">
-                        Manage plans and status for this day.
+                        Manage plans for this day.
                     </SheetDescription>
                 </SheetHeader>
 
                 <div className="flex-1 overflow-y-auto px-6 py-6 space-y-8">
-
-                    {/* Vacation Section */}
-                    <div className="flex items-center justify-between p-4 border rounded-xl bg-gradient-to-br from-white to-slate-50 dark:from-slate-900 dark:to-slate-800/50 shadow-sm transition-all hover:shadow-md">
-                        <div className="space-y-1">
-                            <Label className="text-base font-semibold">Taken Holiday</Label>
-                            <div className="text-sm text-muted-foreground mr-4">
-                                Mark this day as annual leave.
-                            </div>
-                        </div>
-                        <Switch
-                            checked={isVacation}
-                            onCheckedChange={() => toggleVacation(formattedDate)}
-                            className="data-[state=checked]:bg-teal-500"
-                        />
-                    </div>
-
-                    <Separator className="bg-slate-100 dark:bg-slate-800" />
 
                     {/* Plans Section */}
                     <div className="space-y-5">
@@ -177,7 +195,10 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
                                 {plans.map((plan) => (
                                     <div
                                         key={plan.id}
-                                        className="group relative p-4 border border-slate-200 dark:border-slate-800 rounded-xl bg-white dark:bg-slate-900 hover:border-primary/20 hover:shadow-sm transition-all duration-200"
+                                        className={`group relative p-4 border rounded-xl bg-white dark:bg-slate-900 transition-all duration-200 ${plan.requiresHoliday
+                                            ? 'border-teal-200 dark:border-teal-900 bg-teal-50/30 dark:bg-teal-900/10'
+                                            : 'border-slate-200 dark:border-slate-800 hover:border-primary/20'
+                                            }`}
                                     >
                                         <div className="flex justify-between items-start gap-4">
                                             <div className="flex-1 min-w-0 space-y-2">
@@ -185,6 +206,11 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
                                                     <span className="font-semibold text-base text-slate-800 dark:text-slate-200">
                                                         {plan.title}
                                                     </span>
+                                                    {plan.requiresHoliday && (
+                                                        <Badge className="bg-teal-100 text-teal-700 hover:bg-teal-200 dark:bg-teal-900/30 dark:text-teal-300 border-none text-[10px] h-5">
+                                                            Holiday
+                                                        </Badge>
+                                                    )}
                                                     <Badge
                                                         variant="secondary"
                                                         className="text-[10px] h-5 px-2 font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
@@ -203,14 +229,24 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
                                                     </p>
                                                 )}
                                             </div>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-8 w-8 text-slate-400 hover:text-destructive hover:bg-destructive/10 -mt-1 -mr-2 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                                                onClick={() => handleDelete(plan.id)}
-                                            >
-                                                <Trash2 className="h-4 w-4" />
-                                            </Button>
+                                            <div className="flex gap-1 -mt-1 -mr-2 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-slate-400 hover:text-primary hover:bg-primary/10 transition-colors"
+                                                    onClick={() => handleEdit(plan)}
+                                                >
+                                                    <Pencil className="h-4 w-4" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-8 w-8 text-slate-400 hover:text-destructive hover:bg-destructive/10 transition-colors"
+                                                    onClick={() => handleDelete(plan.id)}
+                                                >
+                                                    <Trash2 className="h-4 w-4" />
+                                                </Button>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
@@ -223,13 +259,17 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
                         <div className="border border-indigo-100 dark:border-indigo-900/50 rounded-xl bg-indigo-50/30 dark:bg-indigo-900/10 p-5 space-y-4 animate-in slide-in-from-bottom-2 fade-in duration-300">
                             <div className="flex items-center justify-between">
                                 <h3 className="font-semibold text-sm text-indigo-900 dark:text-indigo-200">
-                                    New Plan Details
+                                    {editingPlan ? 'Edit Plan' : 'New Plan Details'}
                                 </h3>
                                 <Button
                                     variant="ghost"
                                     size="sm"
                                     className="h-6 w-6 p-0 hover:bg-transparent text-slate-400 hover:text-slate-600"
-                                    onClick={() => setIsAddPlanOpen(false)}
+                                    onClick={() => {
+                                        setIsAddPlanOpen(false);
+                                        setEditingPlan(null);
+                                        reset();
+                                    }}
                                 >
                                     <span className="sr-only">Close</span>
                                     <span aria-hidden="true" className="text-lg">×</span>
@@ -250,6 +290,16 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="grid gap-2">
+                                        <Label htmlFor="startDate" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Starts On</Label>
+                                        <Input
+                                            id="startDate"
+                                            type="date"
+                                            className="bg-white dark:bg-slate-900"
+                                            defaultValue={formattedDate}
+                                            {...register('startDate')}
+                                        />
+                                    </div>
+                                    <div className="grid gap-2">
                                         <Label htmlFor="time" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Time</Label>
                                         <Input
                                             id="time"
@@ -263,7 +313,7 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
                                         <Input
                                             id="endDate"
                                             type="date"
-                                            min={formattedDate}
+                                            min={formattedDate} // Maybe allow past dates?
                                             className="bg-white dark:bg-slate-900"
                                             {...register('endDate')}
                                         />
@@ -287,6 +337,25 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
                                     </Select>
                                 </div>
 
+                                <div className="flex items-center space-x-2 py-2">
+                                    <Switch
+                                        id="requiresHoliday"
+                                        checked={watch('requiresHoliday')}
+                                        onCheckedChange={(checked) => setValue('requiresHoliday', checked)}
+                                    />
+                                    <div className="grid gap-1.5 leading-none">
+                                        <Label
+                                            htmlFor="requiresHoliday"
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                        >
+                                            Book Holiday (Annual Leave)
+                                        </Label>
+                                        <p className="text-[0.8rem] text-muted-foreground">
+                                            Deducts from holiday allowance for working days in range.
+                                        </p>
+                                    </div>
+                                </div>
+
                                 <div className="grid gap-2">
                                     <Label htmlFor="notes" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Notes</Label>
                                     <Textarea
@@ -299,7 +368,11 @@ export function DayDetailsDrawer({ open, onOpenChange, date }: DayDetailsDrawerP
                                 </div>
 
                                 <div className="pt-2 flex gap-3">
-                                    <Button type="button" variant="outline" className="flex-1" onClick={() => setIsAddPlanOpen(false)}>
+                                    <Button type="button" variant="outline" className="flex-1" onClick={() => {
+                                        setIsAddPlanOpen(false);
+                                        setEditingPlan(null);
+                                        reset();
+                                    }}>
                                         Cancel
                                     </Button>
                                     <Button type="submit" className="flex-1">

@@ -6,6 +6,7 @@ import { addDays, format, isSameDay, startOfDay } from 'date-fns';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CalendarDays } from 'lucide-react';
+import { Plan } from '@/types';
 
 interface UpcomingPanelProps {
     open: boolean;
@@ -15,87 +16,174 @@ interface UpcomingPanelProps {
 export function UpcomingPanel({ open, onOpenChange }: UpcomingPanelProps) {
     const { dayData, holidays, showBankHolidays, openDrawer } = usePlannerStore();
 
+    // Look ahead 90 days for better planning view
     const today = startOfDay(new Date());
-    const next30Days = Array.from({ length: 30 }, (_, i) => addDays(today, i));
+    const next90Days = Array.from({ length: 90 }, (_, i) => addDays(today, i));
 
-    const upcomingEvents = next30Days.reduce((acc, date) => {
+    // Consolidate Plans logic
+    // We need to group plans by parentId (or id if no parentId)
+    // Map key: planId/parentId -> { plan details, startDate, endDate, allDates[] }
+    interface ConsolidatedPlan {
+        id: string; // Group ID
+        title: string;
+        tag: string;
+        notes?: string;
+        requiresHoliday?: boolean;
+        startDate: Date;
+        endDate: Date;
+        originalPlan: Plan; // Keep one reference for callbacks
+        type: 'plan' | 'holiday';
+    }
+
+    const planGroups: Record<string, ConsolidatedPlan> = {};
+    const processedPlanIds = new Set<string>(); // Track individual plan instance IDs to avoid dupes if we iterate dates
+
+    // Store bank holidays as separate list or integrated?
+    // User wants "upcoming plans". Bank holidays are context. 
+    // Let's create a list of items that includes both.
+    const items: ConsolidatedPlan[] = [];
+
+    // Pre-calculate bank holidays in range
+    const bankHolidaysSet = new Set<string>();
+    if (showBankHolidays) {
+        holidays.forEach(h => {
+            // Check if in range
+            const hDate = new Date(h.date);
+            if (hDate >= today && hDate <= next90Days[next90Days.length - 1]) {
+                bankHolidaysSet.add(h.date);
+                items.push({
+                    id: `holiday-${h.date}`,
+                    title: h.name,
+                    tag: 'Bank Holiday',
+                    startDate: hDate,
+                    endDate: hDate,
+                    type: 'holiday',
+                    originalPlan: {} as Plan // Dummy
+                });
+            }
+        });
+    }
+
+    // Scan days
+    next90Days.forEach(date => {
         const dateStr = format(date, 'yyyy-MM-dd');
         const day = dayData[dateStr];
-        const holiday = holidays.find(h => h.date === dateStr);
-
-        const events = [];
-
-        if (showBankHolidays && holiday) {
-            events.push({ type: 'holiday', title: holiday.name, date });
-        }
 
         if (day?.plans) {
             day.plans.forEach(plan => {
-                events.push({ type: 'plan', title: plan.title, tag: plan.tag, date, notes: plan.notes });
+                if (processedPlanIds.has(plan.id)) return;
+
+                const groupId = plan.parentId || plan.id;
+
+                if (!planGroups[groupId]) {
+                    planGroups[groupId] = {
+                        id: groupId,
+                        title: plan.title,
+                        tag: plan.tag,
+                        notes: plan.notes,
+                        requiresHoliday: plan.requiresHoliday,
+                        startDate: date,
+                        endDate: date,
+                        originalPlan: plan,
+                        type: 'plan'
+                    };
+                } else {
+                    // Update ends
+                    const group = planGroups[groupId];
+                    if (date < group.startDate) group.startDate = date;
+                    if (date > group.endDate) group.endDate = date;
+                }
+
+                processedPlanIds.add(plan.id);
             });
         }
+    });
 
-        if (day?.isVacation) {
-            events.push({ type: 'vacation', title: 'Vacation', date });
-        }
+    // Add consolidated plans to items
+    Object.values(planGroups).forEach(group => items.push(group));
 
-        if (events.length > 0) {
-            acc.push({ date, events });
-        }
-
-        return acc;
-    }, [] as { date: Date, events: any[] }[]);
+    // Sort all items by start date
+    items.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
 
     return (
         <Sheet open={open} onOpenChange={onOpenChange}>
-            <SheetContent side="right" className="w-[100%] sm:w-[400px]">
-                <SheetHeader>
-                    <SheetTitle>Upcoming (30 Days)</SheetTitle>
+            <SheetContent side="right" className="w-[100%] sm:w-[400px] flex flex-col p-0 gap-0">
+                <SheetHeader className="px-6 py-5 border-b">
+                    <SheetTitle>Upcoming Plans</SheetTitle>
                     <SheetDescription>
-                        You have {upcomingEvents.reduce((acc, d) => acc + d.events.length, 0)} events coming up.
+                        Your agenda for the next 3 months.
                     </SheetDescription>
                 </SheetHeader>
 
-                <ScrollArea className="h-[calc(100vh-100px)] mt-4 pr-4">
-                    <div className="space-y-6">
-                        {upcomingEvents.length === 0 ? (
-                            <p className="text-muted-foreground text-center py-10">No upcoming events.</p>
+                <ScrollArea className="flex-1 px-6 py-6">
+                    <div className="space-y-4">
+                        {items.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground opacity-50">
+                                <CalendarDays className="h-12 w-12 mb-3 stroke-1" />
+                                <p>No upcoming plans found.</p>
+                            </div>
                         ) : (
-                            upcomingEvents.map((item) => (
-                                <div key={item.date.toISOString()} className="space-y-2">
-                                    <h4 className="font-medium text-sm text-muted-foreground sticky top-0 bg-background/95 backdrop-blur py-2 z-10 border-b flex items-center justify-between">
-                                        <span>{format(item.date, 'EEEE, MMM d')}</span>
-                                        <span className="text-xs font-normal opacity-70">
-                                            {isSameDay(item.date, new Date()) ? 'Today' :
-                                                isSameDay(item.date, addDays(new Date(), 1)) ? 'Tomorrow' :
-                                                    format(item.date, 'R')}
-                                        </span>
-                                    </h4>
-                                    <div className="space-y-2">
-                                        {item.events.map((event, idx) => (
-                                            <div
-                                                key={idx}
-                                                onClick={() => {
-                                                    onOpenChange(false); // Close upcoming panel
-                                                    openDrawer(format(item.date, 'yyyy-MM-dd')); // Open day drawer
-                                                }}
-                                                className="flex items-center gap-3 p-3 rounded-lg border bg-card text-card-foreground shadow-sm hover:shadow-md hover:border-primary/30 transition-all cursor-pointer group"
-                                            >
-                                                <div className={`h-2 w-2 rounded-full shrink-0 ring-offset-2 ring-1 ring-transparent group-hover:ring-current transition-all ${event.type === 'holiday' ? 'bg-red-500 text-red-500' :
-                                                    event.type === 'vacation' ? 'bg-teal-500 text-teal-500' : 'bg-blue-500 text-blue-500'
-                                                    }`} />
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="font-medium truncate group-hover:text-primary transition-colors">{event.title}</span>
-                                                        {event.tag && <Badge variant="outline" className="text-[10px] ml-2 shrink-0">{event.tag}</Badge>}
-                                                    </div>
-                                                    {event.notes && <p className="text-xs text-muted-foreground line-clamp-1">{event.notes}</p>}
+                            items.map((item) => {
+                                const isMultiDay = !isSameDay(item.startDate, item.endDate);
+                                const dateRange = isMultiDay
+                                    ? `${format(item.startDate, 'MMM d')} - ${format(item.endDate, 'MMM d')}`
+                                    : format(item.startDate, 'EEEE, MMM d');
+
+                                const daysAway = Math.ceil((item.startDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                const relativeTime = daysAway === 0 ? 'Today' : daysAway === 1 ? 'Tomorrow' : `in ${daysAway} days`;
+
+                                return (
+                                    <div
+                                        key={item.id}
+                                        onClick={() => {
+                                            if (item.type === 'plan') {
+                                                onOpenChange(false);
+                                                openDrawer(format(item.startDate, 'yyyy-MM-dd'));
+                                            }
+                                        }}
+                                        className={`
+                                            relative flex flex-col p-4 rounded-xl border transition-all cursor-pointer hover:shadow-md
+                                            ${item.type === 'holiday'
+                                                ? 'bg-orange-50/50 dark:bg-orange-900/10 border-orange-100 dark:border-orange-900/30'
+                                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 hover:border-primary/30'}
+                                        `}
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div>
+                                                <h4 className={`font-semibold text-base ${item.type === 'holiday' ? 'text-orange-700 dark:text-orange-400' : 'text-slate-800 dark:text-slate-100'}`}>
+                                                    {item.title}
+                                                </h4>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                                                        {dateRange}
+                                                    </span>
+                                                    <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                                        {relativeTime}
+                                                    </span>
                                                 </div>
                                             </div>
-                                        ))}
+                                            {item.type === 'plan' && (
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <Badge variant="secondary" className="text-[10px] h-5 px-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                                        {item.tag}
+                                                    </Badge>
+                                                    {item.requiresHoliday && (
+                                                        <Badge className="bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-none text-[10px] h-5 px-2">
+                                                            Holiday
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {item.notes && (
+                                            <p className="text-xs text-muted-foreground line-clamp-2 mt-1 pl-0.5 border-l-2 border-slate-200 dark:border-slate-700 pl-2">
+                                                {item.notes}
+                                            </p>
+                                        )}
                                     </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
                 </ScrollArea>

@@ -39,6 +39,8 @@ interface PlannerState {
     addMultiDayPlan: (startDate: string, endDate: string, plan: Plan, markAsVacation?: boolean) => Promise<void>;
     updatePlan: (date: string, plan: Plan) => Promise<void>;
     removePlan: (date: string, planId: string) => Promise<void>;
+    getPlanRange: (plan: Plan) => { startDate: string, endDate: string };
+    editPlan: (originalPlan: Plan, newStart: string, newEnd: string, newPlanData: Plan, isVacation: boolean) => Promise<void>;
 }
 
 export const usePlannerStore = create<PlannerState>((set, get) => ({
@@ -75,29 +77,53 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
         const data = await getRepository().getAllDayData();
         const settings = await getRepository().getSettings();
 
+        // Calculate vacation status for all loaded days (migration/safeguard)
+        const holidays = get().holidays;
+        const bankHolidayDates = new Set(holidays.map(h => h.date));
+
+        const validatedData: Record<string, DayData> = {};
+
+        Object.values(data).forEach(day => {
+            // Determine if vacation based on plans
+            // Updated: Include weekends/bank holidays if plan requires it
+            const shouldBeVacation = day.plans.some(p => p.requiresHoliday);
+
+            validatedData[day.date] = {
+                ...day,
+                isVacation: shouldBeVacation
+            };
+        });
+
         set((state) => ({
-            dayData: data,
+            dayData: validatedData,
             holidaySettings: settings || state.holidaySettings
         }));
     },
 
     toggleVacation: async (date) => {
-        const currentData = get().dayData[date] || { date, isVacation: false, plans: [] };
-        const newData = { ...currentData, isVacation: !currentData.isVacation };
-
-        // Optimistic update
-        set((state) => ({
-            dayData: { ...state.dayData, [date]: newData }
-        }));
-
-        await getRepository().saveDayData(newData);
+        // Deprecated: No-op or throw?
+        // For backwards compatibility or if UI calls it mismatch, we will remove this UI control.
+        console.warn("toggleVacation is deprecated. Use plan.requiresHoliday instead.");
     },
 
     addPlan: async (date, plan) => {
         const currentData = get().dayData[date] || { date, isVacation: false, plans: [] };
+
+        // Recalculate vacation status
+        const holidays = get().holidays;
+        const bankHolidayDates = new Set(holidays.map(h => h.date));
+        const isWeekendDay = isWeekend(new Date(date));
+        const isBankHoliday = bankHolidayDates.has(date);
+
+        const newPlans = [...currentData.plans, plan];
+
+        // Updated: Include weekends/bank holidays if plan requires it
+        const shouldBeVacation = newPlans.some(p => p.requiresHoliday);
+
         const newData = {
             ...currentData,
-            plans: [...currentData.plans, plan]
+            plans: newPlans,
+            isVacation: shouldBeVacation
         };
 
         set((state) => ({
@@ -145,12 +171,25 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
             const dailyPlan: Plan = {
                 ...basePlan,
                 id: crypto.randomUUID(), // New unique ID for this instance
-                parentId: parentId
+                parentId: parentId,
+                // Ensure requiresHoliday is consistent.
+                // Note: The UI might pass markAsVacation, but now we should rely on basePlan.requiresHoliday
+                // If basePlan.requiresHoliday is set, we use it.
+                // If the param `markAsVacation` passed from legacy calls is true, we should enforce it?
+                // The new UI will pass basePlan with requiresHoliday set.
+                // Let's ensure basePlan takes precedence or syncs.
+                requiresHoliday: basePlan.requiresHoliday
             };
 
+            // If legacy call passes markAsVacation=true but plan says false...
+            // We'll trust properties on the plan object primarily now.
+            if (markAsVacation && dailyPlan.requiresHoliday === undefined) {
+                dailyPlan.requiresHoliday = true;
+            }
+
             // Determine if we should mark this day as vacation
-            // Only mark as vacation if: markAsVacation is true AND it's not a weekend AND it's not a bank holiday
-            const shouldMarkVacation = markAsVacation && !isWeekendDay && !isBankHoliday;
+            // Updated: Include weekends/bank holidays if plan requires it
+            const shouldMarkVacation = (markAsVacation || dailyPlan.requiresHoliday) ?? false;
 
             daysToUpdate[dateStr] = {
                 ...existing,
@@ -176,9 +215,16 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
         const currentData = get().dayData[date];
         if (!currentData) return;
 
+        const newPlans = currentData.plans.map(p => p.id === updatedPlan.id ? updatedPlan : p);
+
+        // Recalculate calc
+        // Updated: Include weekends/bank holidays if plan requires it
+        const shouldBeVacation = newPlans.some(p => p.requiresHoliday);
+
         const newData = {
             ...currentData,
-            plans: currentData.plans.map(p => p.id === updatedPlan.id ? updatedPlan : p)
+            plans: newPlans,
+            isVacation: shouldBeVacation
         };
 
         set((state) => ({
@@ -197,6 +243,8 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
 
         const daysToUpdate: Record<string, DayData> = {};
         const currentDayData = get().dayData;
+        const holidays = get().holidays;
+        const bankHolidayDates = new Set(holidays.map(h => h.date));
 
         // If it's a multi-day plan (has parentId), we need to find all related plans
         if (planToRemove.parentId) {
@@ -208,15 +256,14 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
                 const multiDayInstance = day.plans.find(p => p.parentId === planToRemove.parentId);
                 if (multiDayInstance) {
                     const newPlans = day.plans.filter(p => p.parentId !== planToRemove.parentId);
+
+                    // Recalculate vacation status
+                    // Updated: Include weekends/bank holidays if plan requires it
+                    const shouldBeVacation = newPlans.some(p => p.requiresHoliday);
+
                     daysToUpdate[day.date] = {
                         ...day,
-                        // If we are removing the plan, and the day was isVacation, should we unset it?
-                        // Only if there are no other plans? Or if we explicitly toggle it off?
-                        // Requirement: "when i delete a plan the holidays taken for that plan aren't cleared out"
-                        // So we should unset isVacation if it was set. 
-                        // However, user might have manually set vacation too. 
-                        // For safety: if we delete a holiday plan, we unset isVacation.
-                        isVacation: false,
+                        isVacation: shouldBeVacation,
                         plans: newPlans
                     };
                 }
@@ -224,13 +271,14 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
         } else {
             // Single plan removal
             const newPlans = currentData.plans.filter(p => p.id !== planId);
+
+            // Recalculate
+            // Updated: Include weekends/bank holidays if plan requires it
+            const shouldBeVacation = newPlans.some(p => p.requiresHoliday);
+
             daysToUpdate[date] = {
                 ...currentData,
-                // Assuming we want to clear vacation flag if the user deletes the plan that caused it
-                // Logic: If isVacation is true, and we remove a plan, force it to false?
-                // Or maybe just if it was a single day plan?
-                // Let's implement: clear isVacation for this day.
-                isVacation: false,
+                isVacation: shouldBeVacation,
                 plans: newPlans
             };
         }
@@ -242,5 +290,57 @@ export const usePlannerStore = create<PlannerState>((set, get) => ({
         for (const day of Object.values(daysToUpdate)) {
             await getRepository().saveDayData(day);
         }
+    },
+
+    getPlanRange: (plan) => {
+        const idToSearch = plan.parentId || plan.id;
+        const allDays = get().dayData;
+        const dates: string[] = [];
+
+        Object.values(allDays).forEach(day => {
+            if (day.plans.some(p => p.id === idToSearch || p.parentId === idToSearch)) {
+                dates.push(day.date);
+            }
+        });
+
+        if (dates.length === 0) return { startDate: '', endDate: '' };
+        dates.sort();
+        return { startDate: dates[0], endDate: dates[dates.length - 1] };
+    },
+
+    editPlan: async (originalPlan, newStart, newEnd, newPlanData, isVacation) => {
+        // 1. Remove the old plan (using any date it was present in, we can find it via parentId)
+        // We need a date to call removePlan.
+        const range = get().getPlanRange(originalPlan);
+        if (range.startDate) {
+            await get().removePlan(range.startDate, originalPlan.id);
+        } else {
+            // Fallback if not found (shouldn't happen)
+            return;
+        }
+
+        // 2. Add the new plan
+        // Ensure newPlanData has the same parentId structure if it was multi-day, 
+        // OR if we are effectively creating a new multi-day plan, we might generate a new ID.
+        // Actually, to keep it clean, let's treat it as a new insertion.
+        // But if we want to preserve the "identity" (UUID) of the plan... 
+        // The addMultiDayPlan generates NEW ids for each day instance, but uses a shared parentId.
+        // We should reuse the original parentId if possible, or newPlanData's ID.
+
+        const planToAdd = {
+            ...newPlanData,
+            id: crypto.randomUUID(), // New base ID
+            parentId: originalPlan.parentId || originalPlan.id, // Propagate the original grouping ID
+            // Ensure requiresHoliday is set
+            requiresHoliday: newPlanData.requiresHoliday
+        };
+
+        // Data sanitization: requiresHoliday is now intrinsic to the plan, so the `isVacation` arg is actually redundant 
+        // if we trust newPlanData, but let's ensure consistency.
+
+        // Resetting parentId to ensure fresh start for the new range
+        planToAdd.parentId = planToAdd.id;
+
+        await get().addMultiDayPlan(newStart, newEnd, planToAdd, newPlanData.requiresHoliday);
     }
 }));

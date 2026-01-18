@@ -11,6 +11,7 @@ export interface Plan {
   tag: PlanCategory;
   notes?: string;
   parentId?: string; // For multi-day events
+  requiresHoliday?: boolean; // If true, this plan consumes holiday allowance
   createdAt: number; // timestamp
 }
 
@@ -44,6 +45,7 @@ export const PlanSchema = z.object({
   tag: z.enum(['Work', 'Personal', 'Travel', 'Health', 'Family', 'Other']),
   notes: z.string().optional(),
   parentId: z.string().optional(),
+  requiresHoliday: z.boolean().optional(),
   createdAt: z.number(),
 });
 

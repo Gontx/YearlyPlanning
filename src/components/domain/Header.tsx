@@ -16,7 +16,7 @@ import { HolidaySettingsDialog } from './HolidaySettingsDialog';
 import { UserMenu } from '@/components/auth/UserMenu';
 import { Badge } from '@/components/ui/badge';
 import { useState } from 'react';
-import { format, startOfDay, addDays } from 'date-fns';
+import { format, startOfDay, addDays, isWeekend } from 'date-fns';
 
 export function Header() {
     const {
@@ -36,7 +36,16 @@ export function Header() {
     const dayData = usePlannerStore(state => state.dayData);
     const holidaySettings = usePlannerStore(state => state.holidaySettings);
 
-    const vacationDays = Object.values(dayData).filter(d => d.isVacation).length;
+    const holidays = usePlannerStore(state => state.holidays);
+    const bankHolidayDates = new Set(holidays.map(h => h.date));
+
+    // Only count working days (not weekends, not bank holidays) as used allowance
+    const vacationDays = Object.values(dayData).filter(d => {
+        if (!d.isVacation) return false;
+        const dateObj = new Date(d.date);
+        return !isWeekend(dateObj) && !bankHolidayDates.has(d.date);
+    }).length; // .length counts the working days marked as vacation
+
     const totalAllowance = holidaySettings.baseAllowance + holidaySettings.rolloverDays;
     const hasRollover = holidaySettings.rolloverDays > 0;
     const isOverBudget = vacationDays > totalAllowance;
